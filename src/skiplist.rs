@@ -60,7 +60,7 @@ where
 
 type NodePtr<K, V> = Rc<RefCell<SkipNode<K, V>>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SkipList<K, V> {
     head: Rc<RefCell<SkipNode<K, V>>>,
     //tail: SkipNode<K, V>,
@@ -188,7 +188,9 @@ where
         //    return
         if let Some(existing) = Self::get_forward(&current, 0) {
             if Self::node_value_equals(&existing, &value) {
-                let old = existing.borrow_mut().value.replace(value);
+                let mut node = existing.borrow_mut();
+                node.key = Some(key);
+                let old = node.value.replace(value);
                 return old;
             }
         }

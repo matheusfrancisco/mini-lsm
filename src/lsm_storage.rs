@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use clap::Arg;
 use parking_lot::{Mutex, RwLock};
 
 use crate::mem_table::MemTable;
@@ -33,18 +34,6 @@ impl LsmStorageState {
             l0_sstables: Vec::new(),
             levels: Vec::new(),
         }
-    }
-}
-
-impl LsmStorageState {
-    pub fn put(&mut self, key: &[u8], value: &[u8]) -> anyhow::Result<()> {
-        // TOOO: In a real implementation, you would need to check the memtable size and flush
-        // it to an SSTable when it exceeds a certain threshold.
-        // For simplicity, we will not implement memtable flushing
-        // and compaction in this example, at this point
-        // we will do this latter on..
-        //
-        Arc::get_mut(&mut self.memtable).unwrap().put(key, value)
     }
 }
 
@@ -82,11 +71,44 @@ impl LsmStorageInner {
 
     pub fn put(&self, key: &[u8], value: &[u8]) -> anyhow::Result<()> {
         let guard = self.state.read();
+        guard.memtable.put(key, value)
+    }
 
-        //to keep this I will need to make my
-        //skiplist insert use self instead mut self
-        //or remove the arc arround
-        //    guard.put(key, value)
-        Ok(())
+    pub fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        let guard = self.state.read();
+        guard.memtable.get(key).map(|v| v.to_vec())
+    }
+
+    pub fn delete(&self, key: &[u8]) -> anyhow::Result<()> {
+        let guard = self.state.read();
+        guard.memtable.put(key, b"") // Using empty value to represent deletion for simplicity.
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::lsm_storage::LsmStorageInner;
+
+    #[test]
+    fn test_put() {
+        let storage = LsmStorageInner::open("test_data").unwrap();
+        storage.put(b"key1", b"value1").unwrap();
+        storage.put(b"key2", b"value2").unwrap();
+
+        assert_eq!(storage.get(b"key1").unwrap(), b"value1".to_vec());
+        assert_eq!(storage.get(b"key2").unwrap(), b"value2".to_vec());
+
+        storage.put(b"key1", b"value2").unwrap();
+        assert_eq!(storage.get(b"key1").unwrap(), b"value2".to_vec());
+
+        storage.delete(b"key1").unwrap();
+        assert_eq!(storage.get(b"key1").unwrap(), b"".to_vec());
+    }
+
+    #[test]
+    fn test_get_nonexistent_key() {
+        let storage = LsmStorageInner::open("test_data").unwrap();
+        assert!(storage.get(b"nonexistent").is_none());
+    }
+}
+
