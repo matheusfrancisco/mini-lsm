@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, atomic::AtomicUsize};
 
 use bytes::Bytes;
 use crossbeam_skiplist::SkipMap;
@@ -10,6 +10,7 @@ pub struct MemTable {
     map: RwLock<SkipList<Bytes, Bytes>>, // for now I am using my custom skiplist, but I might switch to crossbeam's skiplist later for better performance and concurrency support.
     // map2: Arc<SkipMap<Bytes, Bytes>>,
     id: usize,
+    approximate_size: Arc<AtomicUsize>,
 }
 
 impl MemTable {
@@ -22,7 +23,11 @@ impl MemTable {
             map: RwLock::new(SkipList::new(4, Bytes::new(), Bytes::new())),
             //        map2: Arc::new(SkipMap::new()),
             id,
+            approximate_size: Arc::new(AtomicUsize::new(0)),
         }
+    }
+    pub fn approximate_size(&self) -> usize {
+        self.approximate_size.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn id(&self) -> usize {
@@ -49,13 +54,15 @@ impl MemTable {
     /// This uses the custom skiplist implementation. The skiplist currently
     /// orders and searches by its `value` field, so we store `(value, key)`.
     pub fn put(&self, key: &[u8], value: &[u8]) -> anyhow::Result<()> {
+        let estimated_size = key.len() + value.len();
         let key = Bytes::copy_from_slice(key);
         let value = Bytes::copy_from_slice(value);
         let mut map = self.map.write().unwrap();
         map.insert(value.clone(), key.clone());
         // Also insert into the crossbeam skiplist for testing purposes.
         //self.map2.insert(key, value);
-
+        self.approximate_size
+            .fetch_add(estimated_size, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 }
